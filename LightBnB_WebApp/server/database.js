@@ -20,7 +20,8 @@ const pool = new Pool({
 const getUserWithEmail = function(email) {
   const queryString = `SELECT * FROM users WHERE email = $1;`;
   const values = [email];
-  return pool.query(queryString, values)
+  return pool
+    .query(queryString, values)
     .then((res) => res.rows[0])
     .catch((err) => console.error("query error", err.stack));
 };
@@ -34,7 +35,8 @@ exports.getUserWithEmail = getUserWithEmail;
 const getUserWithId = function(id) {
   const queryString = `SELECT * FROM users WHERE email = $1;`;
   const values = [id];
-  return pool.query(queryString, values)
+  return pool
+    .query(queryString, values)
     .then((res) => res.rows[0])
     .catch((err) => console.error("query error", err.stack));
 };
@@ -53,7 +55,8 @@ const addUser =  function(user) {
   RETURNING *;`;
   const values = [user.name, user.email, user.password];
 
-  return pool.query(queryString, values)
+  return pool
+    .query(queryString, values)
     .then((res) => res.rows[0]
     )
     .catch((err) => console.error("query error", err.stack));
@@ -80,9 +83,9 @@ const getAllReservations = function(guest_id, limit = 10) {
   LIMIT $2;
 `;
   const values = [guest_id, limit];
-  return pool.query(queryString, values)
-    .then((res) => res.rows
-    )
+  return pool
+    .query(queryString, values)
+    .then((res) => res.rows)
     .catch((err) => console.error("query error", err.stack));
 };
 exports.getAllReservations = getAllReservations;
@@ -96,14 +99,75 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = function(options, limit = 10) {
-  const queryString = `SELECT * FROM properties LIMIT $1;`;
-  const values = [limit];
+  //1 - constants
+  const queryParams = [];
+  const base = 10;
+  
+  //2 - variables
+  let counter = 0;
+  let queryString = `
+  SELECT properties.*,
+    AVG(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON property_reviews.property_id = properties.id
+  `;
+  //3 - all if statements based on search criteria
+  if (options.city) {
+    counter++;
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city ILIKE $${queryParams.length} 
+    `;
+  }
+
+  if (options.owner_id) {
+    counter++;
+    queryParams.push(options.owner_id);
+    if (counter === 2) {
+      queryString += `AND owner_id = $${queryParams.length} 
+      `;
+    } else if (counter === 1) {
+      queryString += `WHERE owner_id = $${queryParams.length} 
+      `;
+    }
+  }
+
+  if (options.minimum_price_per_night && options.maximum_price_per_night) {
+    counter += 2;
+    console.log("string ?", Number.isInteger(options.maximum_price_per_night));
+    const min = parseInt(options.minimum_price_per_night, base);
+    const max = parseInt(options.maximum_price_per_night, base);
+    queryParams.push(min);
+    queryString += `AND cost_per_night >= $${queryParams.length} 
+    `;
+    queryParams.push(max);
+    queryString += `AND cost_per_night <= $${queryParams.length} 
+    `;
+  }
+
+  queryString += `GROUP BY properties.id
+  `;
+
+  if (options.minimum_rating) {
+    counter++;
+    queryParams.push(options.minimum_rating);
+    queryString += `HAVING AVG(property_reviews.rating) >= $${queryParams.length} 
+    `;
+  }
+
+  //4 - final query statements
+  queryParams.push(limit);
+  queryString += `ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+  //5 - backend object verification
+  console.log(queryString, queryParams);
+
+  //6 - frontend result
   return pool
-    .query(queryString, values)
-    .then((result) => result.rows)
-    .catch((err) => {
-      console.log(err.message);
-    });
+    .query(queryString, queryParams)
+    .then((res) => res.rows)
+    .catch((err) => console.error("query error", err.stack));
 };
 exports.getAllProperties = getAllProperties;
 
@@ -118,5 +182,5 @@ const addProperty = function(property) {
   property.id = propertyId;
   properties[propertyId] = property;
   return Promise.resolve(property);
-}
+};
 exports.addProperty = addProperty;
